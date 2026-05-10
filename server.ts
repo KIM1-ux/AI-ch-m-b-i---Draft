@@ -5,9 +5,24 @@ import multer from "multer";
 import { v4 as uuidv4 } from "uuid";
 import fs from "fs";
 import cors from "cors";
+import jwt from "jsonwebtoken";
+import bcrypt from "bcryptjs";
+
+const JWT_SECRET = process.env.JWT_SECRET || "fallback-secret-key-do-not-use-in-prod";
 
 // Mock Database Schema
+type UserRole = 'student' | 'teacher';
+type User = {
+  id: string;
+  name: string;
+  email: string;
+  password_hash: string;
+  role: UserRole;
+  created_at: number;
+};
+
 type DocumentStatus = 'uploading' | 'processing' | 'ready' | 'error';
+
 type Document = {
   id: string;
   file_name: string;
@@ -36,6 +51,24 @@ type Submission = {
 };
 
 // In-memory Database
+let dbUsers: User[] = [
+  {
+    id: "user-1",
+    name: "Nguyễn Hà",
+    email: "teacher@test.com",
+    password_hash: bcrypt.hashSync("password123", 10),
+    role: "teacher",
+    created_at: Date.now()
+  },
+  {
+    id: "user-2",
+    name: "Nguyễn Anh Thư",
+    email: "student@test.com",
+    password_hash: bcrypt.hashSync("password123", 10),
+    role: "student",
+    created_at: Date.now()
+  }
+];
 let dbDocuments: Document[] = [];
 let dbSubmissions: Submission[] = [
   {
@@ -130,6 +163,89 @@ export async function startServer() {
 
   app.use(cors());
   app.use(express.json());
+
+  // AUTHENTICATION MIDDLEWARE
+  const authenticateToken = (req: any, res: any, next: any) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+    
+    if (!token) return res.status(401).json({ error: "Access token missing" });
+    
+    jwt.verify(token, JWT_SECRET, (err: any, user: any) => {
+      if (err) return res.status(403).json({ error: "Invalid token" });
+      req.user = user;
+      next();
+    });
+  };
+
+  // AUTH APIs
+  app.post("/api/auth/register", async (req, res) => {
+    try {
+      const { email, password, name, role } = req.body;
+      
+      if (!email || !password || !name || !role) {
+        return res.status(400).json({ error: "Mising required fields" });
+      }
+
+      if (password.length < 6) {
+        return res.status(400).json({ error: "Mật khẩu phải từ 6 ký tự trở lên" });
+      }
+
+      const existingUser = dbUsers.find(u => u.email === email);
+      if (existingUser) {
+        return res.status(400).json({ error: "Email này đã được sử dụng" });
+      }
+
+      const password_hash = await bcrypt.hash(password, 10);
+      
+      const newUser: User = {
+        id: uuidv4(),
+        name,
+        email,
+        password_hash,
+        role: role as UserRole,
+        created_at: Date.now()
+      };
+      
+      dbUsers.push(newUser);
+      
+      const token = jwt.sign({ id: newUser.id, role: newUser.role, name: newUser.name, email: newUser.email }, JWT_SECRET, { expiresIn: '7d' });
+      
+      res.json({ success: true, token, user: { id: newUser.id, role: newUser.role, name: newUser.name, email: newUser.email } });
+    } catch (err) {
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/auth/login", async (req, res) => {
+    try {
+      const { email, password } = req.body;
+      
+      if (!email || !password) {
+        return res.status(400).json({ error: "Vui lòng nhập email và mật khẩu" });
+      }
+      
+      const user = dbUsers.find(u => u.email === email);
+      if (!user) {
+        return res.status(401).json({ error: "Email hoặc mật khẩu không chính xác" });
+      }
+      
+      const validPassword = await bcrypt.compare(password, user.password_hash);
+      if (!validPassword) {
+        return res.status(401).json({ error: "Email hoặc mật khẩu không chính xác" });
+      }
+      
+      const token = jwt.sign({ id: user.id, role: user.role, name: user.name, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
+      
+      res.json({ success: true, token, user: { id: user.id, role: user.role, name: user.name, email: user.email } });
+    } catch (err) {
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/auth/me", authenticateToken, (req: any, res) => {
+    res.json({ user: req.user });
+  });
 
   // KNOWLEDGE BASE APIs
   // API 1: GET /api/knowledge/stats

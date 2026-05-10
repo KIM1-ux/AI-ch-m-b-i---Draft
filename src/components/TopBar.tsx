@@ -4,22 +4,54 @@ import { studentInfo } from '@/data/mockData';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth, Role } from '@/context/AuthContext';
 import { cn } from '@/lib/utils';
+import { handleLogin as fbLogin, handleRegister as fbRegister } from '@/authService';
 
 export function TopBar({ onSubmitClick }: { onSubmitClick?: () => void }) {
-  const { isLoggedIn, role, login, logout } = useAuth();
+  const { isLoggedIn, role, login, logout, user } = useAuth();
   const [showDropdown, setShowDropdown] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState<false | 'login' | 'register'>(false);
   const [selectedRole, setSelectedRole] = useState<Role>('student');
 
-  const handleLogin = () => {
-    // In a real app we would check credentials. For now we use the selected role in modal or default to student
-    // Wait, the login modal doesn't have role selection, but let's assume it logs you in as selectedRole
-    login(selectedRole);
-    setShowAuthModal(false);
+  const [name, setAuthName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleSubmit = async () => {
+    setError(null);
+    setIsLoading(true);
+    
+    try {
+      if (showAuthModal === 'login') {
+        await fbLogin(email, password);
+        setShowAuthModal(false);
+      } else {
+        if (!name.trim()) throw new Error("Vui lòng nhập họ và tên.");
+        if (password.length < 6) throw new Error("Mật khẩu phải từ 6 ký tự trở lên.");
+        await fbRegister(email, password, selectedRole, name.trim());
+        setShowAuthModal(false);
+      }
+    } catch (err: any) {
+      if (err.code === 'auth/email-already-in-use') {
+        setError("Email này đã được sử dụng");
+      } else if (err.code === 'auth/invalid-credential') {
+        setError("Email hoặc mật khẩu không chính xác");
+      } else {
+        setError(err.message || "Đã có lỗi xảy ra");
+      }
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const name = role === 'student' ? 'Nguyễn Anh Thư' : 'Cô Nguyễn Hà';
+  const displayName = user?.name || (role === 'student' ? 'Nguyễn Anh Thư' : 'Cô Nguyễn Hà');
   const avatar = role === 'student' ? studentInfo.avatar : 'https://api.dicebear.com/7.x/avataaars/svg?seed=TeacherHa&backgroundColor=e2e8f0';
+
+  let viewError = error;
+  if (!viewError && showAuthModal === 'register' && selectedRole === 'teacher') {
+    viewError = 'Lưu ý: Bạn đang đăng ký với tư cách Giáo viên (Quyền quản trị).';
+  }
 
   return (
     <>
@@ -186,9 +218,22 @@ export function TopBar({ onSubmitClick }: { onSubmitClick?: () => void }) {
                     </div>
                   )}
 
+                  {viewError && (
+                    <div className={cn("p-3 rounded-lg text-sm", viewError.includes('Lưu ý') ? "bg-amber-50 text-amber-700 border border-amber-200" : "bg-red-50 text-red-600 border border-red-100")}>
+                      {viewError}
+                    </div>
+                  )}
+
+                  {showAuthModal === 'register' && (
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1.5 text-left">Họ và tên</label>
+                      <input type="text" value={name} onChange={e => setAuthName(e.target.value)} placeholder="Nhập họ và tên" className="w-full px-4 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-colors" />
+                    </div>
+                  )}
+                  
                   {showAuthModal === 'login' && (
                     <div>
-                       <div className="flex bg-slate-100 p-1 rounded-lg mb-5">
+                       <div className="flex bg-slate-100 p-1 rounded-lg mb-2">
                           <button 
                             onClick={() => setSelectedRole('student')}
                             className={cn("flex-1 py-1.5 text-sm font-medium rounded-md transition-all", selectedRole === 'student' ? "bg-white shadow-sm text-indigo-700" : "text-slate-500 hover:text-slate-700")}
@@ -204,21 +249,23 @@ export function TopBar({ onSubmitClick }: { onSubmitClick?: () => void }) {
                        </div>
                     </div>
                   )}
-
+                  
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1.5 text-left">Email</label>
-                    <input type="email" placeholder="Nhập email của bạn" className="w-full px-4 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-colors" />
+                    <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Nhập email của bạn" className="w-full px-4 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-colors" />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1.5 text-left">Mật khẩu</label>
-                    <input type="password" placeholder="Nhập mật khẩu" className="w-full px-4 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-colors" />
+                    <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Nhập mật khẩu" className="w-full px-4 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-colors" />
                   </div>
                   
                   <div className="pt-4">
                     <button 
-                      onClick={handleLogin}
-                      className="w-full py-2.5 rounded-lg bg-indigo-600 text-white font-semibold hover:bg-indigo-700 transition-colors shadow-sm shadow-indigo-200/50"
+                      onClick={handleSubmit}
+                      disabled={isLoading}
+                      className="w-full py-2.5 rounded-lg bg-indigo-600 text-white font-semibold hover:bg-indigo-700 transition-colors shadow-sm shadow-indigo-200/50 disabled:opacity-50 flex items-center justify-center gap-2"
                     >
+                      {isLoading && <span className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin"></span>}
                       {showAuthModal === 'login' ? 'Đăng nhập' : 'Hoàn tất Đăng ký'}
                     </button>
                   </div>
