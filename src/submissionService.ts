@@ -12,12 +12,12 @@ export const saveSubmission = async (data: any) => {
       final_score: data.aiScore, 
       // Dữ liệu nhận xét chi tiết (JSON)
       feedback_data: {
-        positive: data.feedback.positive,
-        improvements: data.feedback.improvements,
-        suggestions: data.feedback.suggestions
+        positive: data.feedback?.positive || [],
+        improvements: data.feedback?.improvements || [],
+        suggestions: data.feedback?.suggestions || []
       },
       // Dữ liệu điểm Rubric để vẽ biểu đồ mạng nhện (JSON)
-      rubric_details: data.rubricDetails, 
+      rubric_details: data.rubricDetails || [], 
       timestamp: serverTimestamp()
     });
   } catch (error) {
@@ -25,3 +25,13 @@ export const saveSubmission = async (data: any) => {
     throw error;
   }
 };
+
+export const saveDetailedSubmission = async (submissionData: any) => {
+  // submissionData bao gồm: ai_score, final_score, feedback_json, rubric_details_json
+  return await addDoc(collection(db, "submissions"), {
+    ...submissionData,
+    status: "pending",
+    timestamp: new Date()
+  });
+};
+
