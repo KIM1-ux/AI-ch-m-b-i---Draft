@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Sidebar } from "./components/Sidebar";
 import { Dashboard } from "./components/Dashboard";
 import { SubmitView } from "./components/SubmitView";
@@ -11,15 +11,19 @@ import { AIConfig } from "./components/AIConfig";
 import { KnowledgeBase } from "./components/KnowledgeBase";
 import { SubmissionManager } from "./components/SubmissionManager";
 import { QuestionBankProvider } from "./context/QuestionBankContext";
-import { motion, AnimatePresence } from "motion/react";
-import { GraduationCap, Users } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { AuthProvider, useAuth } from "./context/AuthContext";
+import { Users } from "lucide-react";
+import { TopBar } from "./components/TopBar";
 
-export default function App() {
-  const [role, setRole] = useState<"student" | "teacher">("student");
-  // Manage generic view state string, though available views differ by role.
+function AppContent() {
+  const { role, isLoggedIn } = useAuth();
   const [currentView, setCurrentView] = useState("dashboard");
   const [activeSubmissionId, setActiveSubmissionId] = useState<string | undefined>();
+
+  useEffect(() => {
+    // Redirect to dashboard on role change or login
+    setCurrentView("dashboard");
+  }, [role, isLoggedIn]);
 
   const renderContent = () => {
     if (role === "student") {
@@ -34,9 +38,10 @@ export default function App() {
           return <StudentHistory onViewResult={(id) => { setActiveSubmissionId(id); setCurrentView("result"); }} onSubmitNew={() => setCurrentView("submit")} />;
         default:
           return (
-            <div className="p-8 text-center text-slate-500 animate-in fade-in">
-              <h2 className="text-xl font-bold mb-2">Tính năng đang phát triển (Học sinh)</h2>
-              <p>Vui lòng chọn Trang chủ hoặc Nộp bài mới.</p>
+            <div className="p-8 flex flex-col justify-center items-center h-full text-center text-slate-500 animate-in fade-in">
+              <h2 className="text-2xl font-bold mb-2 text-red-600">403 Forbidden</h2>
+              <p>Bạn không có quyền truy cập vào trang này với vai trò Học sinh.</p>
+              <button onClick={() => setCurrentView("dashboard")} className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">Về Trang Chủ</button>
             </div>
           );
       }
@@ -54,76 +59,38 @@ export default function App() {
           return <SubmissionManager />;
         default:
           return (
-            <div className="p-8 text-center text-slate-500 animate-in fade-in flex flex-col items-center justify-center h-full">
-              <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-4">
-                <Users className="w-8 h-8 text-slate-400" />
-              </div>
-              <h2 className="text-xl font-bold mb-2 text-slate-700">Module quản lý đang xây dựng</h2>
-              <p className="max-w-md mx-auto">Vui lòng sử dụng tính năng "Dashboard" để xem tổng quan. Các tính năng cấu hình đang được tích hợp.</p>
+            <div className="p-8 flex flex-col justify-center items-center h-full text-center text-slate-500 animate-in fade-in">
+              <h2 className="text-2xl font-bold mb-2 text-red-600">403 Forbidden</h2>
+              <p>Trang không tồn tại hoặc bạn không có quyền truy cập.</p>
+              <button onClick={() => setCurrentView("dashboard")} className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">Về Trang Chủ</button>
             </div>
           );
       }
     }
   };
 
-  const handleRoleToggle = () => {
-    setRole((prev) => (prev === "student" ? "teacher" : "student"));
-    setCurrentView("dashboard");
-  };
-
   return (
-    <QuestionBankProvider>
-      <div className="flex h-screen bg-slate-50 font-sans text-slate-900 overflow-hidden">
-        {role === "student" ? (
-          <Sidebar currentView={currentView} setCurrentView={setCurrentView} />
-        ) : (
-          <TeacherSidebar currentView={currentView} setCurrentView={setCurrentView} />
-        )}
-        
-        <main className="flex-1 overflow-y-auto relative">
-          {renderContent()}
+    <div className="flex h-screen bg-slate-50 font-sans text-slate-900 overflow-hidden">
+      {role === "student" ? (
+        <Sidebar currentView={currentView} setCurrentView={setCurrentView} />
+      ) : (
+        <TeacherSidebar currentView={currentView} setCurrentView={setCurrentView} />
+      )}
+      
+      <main className="flex-1 overflow-y-auto relative flex flex-col">
+        <TopBar onSubmitClick={() => setCurrentView("submit")} />
+        {renderContent()}
+      </main>
+    </div>
+  );
+}
 
-          {/* Role Switcher */}
-          <div className="fixed bottom-6 right-6 z-50">
-             <motion.button
-                layout
-                onClick={handleRoleToggle}
-                className={cn(
-                  "flex items-center gap-2 px-4 py-3 rounded-full shadow-lg text-white font-medium transition-colors border",
-                  role === "student" ? "bg-indigo-600 hover:bg-indigo-700 border-indigo-500/20" : "bg-slate-900 hover:bg-black border-slate-700/50"
-                )}
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-             >
-                <AnimatePresence mode="popLayout" initial={false}>
-                  {role === "student" ? (
-                    <motion.div
-                      key="student"
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -20 }}
-                      className="flex items-center gap-2"
-                    >
-                       <Users className="w-5 h-5" />
-                       <span>Học sinh</span>
-                    </motion.div>
-                  ) : (
-                    <motion.div
-                      key="teacher"
-                      initial={{ opacity: 0, y: -20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: 20 }}
-                      className="flex items-center gap-2"
-                    >
-                       <GraduationCap className="w-5 h-5" />
-                       <span>Giáo viên</span>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-             </motion.button>
-          </div>
-        </main>
-      </div>
-    </QuestionBankProvider>
+export default function App() {
+  return (
+    <AuthProvider>
+      <QuestionBankProvider>
+        <AppContent />
+      </QuestionBankProvider>
+    </AuthProvider>
   );
 }
