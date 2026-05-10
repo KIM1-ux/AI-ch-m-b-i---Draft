@@ -21,7 +21,7 @@ export function Sidebar({ currentView, setCurrentView }: SidebarProps) {
       <div className="p-6">
         <h1 className="text-xl font-bold text-white flex items-center gap-2">
           <span className="bg-indigo-500 text-white p-1.5 py-0.5 rounded text-sm tracking-widest font-black uppercase">AI</span>
-          <span className="tracking-tight">CHẤM BÀI LỊCH SỬ</span>
+          <span className="tracking-tight text-base whitespace-nowrap">CHẤM BÀI LỊCH SỬ</span>
         </h1>
       </div>
       

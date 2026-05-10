@@ -4,6 +4,8 @@ import { FileUp, TrendingUp, Award, ChevronRight, Loader2 } from "lucide-react";
 import { studentInfo } from "@/data/mockData";
 import { cn } from "@/lib/utils";
 
+import { HeaderAuth } from './HeaderAuth';
+
 export function Dashboard({ onViewResult }: { onViewResult: (id?: string) => void }) {
   const [summary, setSummary] = useState({ totalSubmissions: 0, averageScore: "-", bestSkill: "-" });
   const [performance, setPerformance] = useState({ progress_data: [], skills_radar: [] });
@@ -51,18 +53,16 @@ export function Dashboard({ onViewResult }: { onViewResult: (id?: string) => voi
     <div className="p-8 max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500">
       {/* Header & Stats */}
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
+        <div className="flex items-start justify-between sticky top-0 z-30 bg-slate-50/90 backdrop-blur-md border-b border-slate-200 pb-4 pt-8 -mt-8 mx-[-2rem] px-[2rem]">
+          <div className="pt-1.5">
             <h2 className="text-3xl font-bold tracking-tight text-slate-900">
               Luyện tư duy lịch sử cùng AI chuyên sâu cho HSG THCS
             </h2>
-            <p className="text-slate-500 mt-1">Phân tích bài làm, sửa lỗi lập luận và nâng cao kỹ năng trình bày.</p>
+            <p className="text-slate-500 mt-1.5">Phân tích bài làm, sửa lỗi lập luận và nâng cao kỹ năng trình bày.</p>
           </div>
-          <img 
-            src={studentInfo.avatar} 
-            alt="Avatar" 
-            className="w-16 h-16 rounded-full border-2 border-indigo-100 shadow-sm"
-          />
+          <div className="pt-2">
+            <HeaderAuth />
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
