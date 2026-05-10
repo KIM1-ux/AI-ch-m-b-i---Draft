@@ -57,3 +57,38 @@ export const sampleResult = {
     guidance: "Em nên bổ sung thêm ý nghĩa về mặt quốc tế của Cách mạng tháng Tám để bài viết sâu sắc hơn. Cụ thể, thắng lợi này đã cổ vũ mạnh mẽ phong trào giải phóng dân tộc trên thế giới, đặc biệt là ở Châu Á và Châu Phi. Thử viết thêm 1 đoạn: 'Không chỉ mang ý nghĩa quốc gia, Cách mạng tháng Tám còn chọc thủng khâu yếu nhất trong hệ thống thuộc địa của chủ nghĩa đế quốc...'"
   }
 }
+
+export const teacherStats = {
+  totalSubmitted: 342,
+  averageScore: 7.4,
+  pendingApprovals: 8
+};
+
+export const classProgressData = [
+  { week: 'Tuần 1', score: 6.0 },
+  { week: 'Tuần 2', score: 6.5 },
+  { week: 'Tuần 3', score: 6.2 },
+  { week: 'Tuần 4', score: 7.1 },
+  { week: 'Tuần 5', score: 7.4 },
+];
+
+export const commonErrors = [
+  { error: "Sai niên đại", count: 45, trend: "down" },
+  { error: "Thiếu ý diễn biến chính", count: 32, trend: "up" },
+  { error: "Lập luận chưa sâu", count: 28, trend: "same" },
+  { error: "Nhầm lẫn sự kiện", count: 18, trend: "down" },
+];
+
+export const approvalQueue = [
+  { id: 'a1', student: "Minh Quân", topic: "Chiến dịch Điện Biên Phủ", aiScore: 9.5, confidence: 65, reason: "Lập luận mới lạ, tự tin thấp", date: "10/05/2026" },
+  { id: 'a2', student: "Bảo Trâm", topic: "Cách mạng tháng Tám 1945", aiScore: 3.0, confidence: 80, reason: "Điểm quá thấp (< 4.0)", date: "10/05/2026" },
+  { id: 'a3', student: "Tuấn Kiệt", topic: "Chiến tranh lạnh", aiScore: 8.5, confidence: 55, reason: "Ảnh mờ, OCR có thể thiều từ", date: "09/05/2026" },
+];
+
+export const heatmapData = [
+  { skill: "Kiến thức", weak: 15, avg: 55, strong: 30 },
+  { skill: "Logic", weak: 25, avg: 50, strong: 25 },
+  { skill: "Phản biện", weak: 70, avg: 20, strong: 10 },
+  { skill: "Diễn đạt", weak: 20, avg: 60, strong: 20 },
+  { skill: "Liên hệ", weak: 60, avg: 30, strong: 10 },
+];

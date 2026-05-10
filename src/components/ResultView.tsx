@@ -1,199 +1,418 @@
-import { useState, type ReactNode } from "react";
-import { CheckCircle2, AlertTriangle, Lightbulb, ChevronRight, ArrowLeft } from "lucide-react";
-import { sampleResult } from "@/data/mockData";
+import { useState, useEffect } from "react";
+import { CheckCircle2, AlertTriangle, Lightbulb, RefreshCw, FileText, Loader2, User, Clock, Star, StarHalf, Edit3 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export function ResultView({ onBack }: { onBack: () => void }) {
-  const [activeHighlight, setActiveHighlight] = useState<number | null>(null);
+export function ResultView({ submissionId, onBack }: { submissionId?: string, onBack: () => void }) {
+  const [submission, setSubmission] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRegrading, setIsRegrading] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editedContent, setEditedContent] = useState("");
 
-  // Quick utility to wrap highlighted text in the paragraph
-  const renderTextWithHighlights = () => {
-    let resultText = sampleResult.text;
-    
-    // We will do a simple string replace for demo purposes.
-    // In a real app, this should be done with proper AST or offset mapping.
-    let elementArr: ReactNode[] = [];
-    let currentIndex = 0;
-
-    sampleResult.highlights.forEach((hl, i) => {
-      const start = resultText.indexOf(hl.text, currentIndex);
-      if (start !== -1) {
-        // Text before highlight
-        elementArr.push(<span key={`text-${i}`}>{resultText.substring(currentIndex, start)}</span>);
-        // Highlight itself
-        elementArr.push(
-          <mark 
-            key={`hl-${i}`} 
-            onMouseEnter={() => setActiveHighlight(i)}
-            onMouseLeave={() => setActiveHighlight(null)}
-            className={cn(
-              "px-1 py-0.5 rounded cursor-pointer transition-colors",
-              hl.type === 'positive' && "bg-green-100 text-green-900 hover:bg-green-200",
-              hl.type === 'warning' && "bg-amber-100 text-amber-900 hover:bg-amber-200",
-              activeHighlight === i && "ring-2 ring-indigo-500 ring-offset-1"
-            )}
-          >
-            {hl.text}
-          </mark>
-        );
-        currentIndex = start + hl.text.length;
-      }
-    });
-
-    // Remaining text
-    elementArr.push(<span key="end">{resultText.substring(currentIndex)}</span>);
-
-    return elementArr;
+  const loadData = async (id: string) => {
+    setIsLoading(true);
+    try {
+      const res = await fetch(`/api/submissions/${id}`);
+      const data = await res.json();
+      setSubmission(data);
+      setEditedContent(data.content || "");
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
+  useEffect(() => {
+    if (submissionId) {
+      loadData(submissionId);
+    } else {
+      setIsLoading(false);
+    }
+  }, [submissionId]);
+
+  const handleRegrade = async () => {
+    if (!submission) return;
+    setIsRegrading(true);
+    
+    if (isEditing) {
+      try {
+        await fetch(`/api/submissions/${submission.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content: editedContent }),
+        });
+      } catch(e) {
+        console.error(e);
+        setIsRegrading(false);
+        return;
+      }
+      setIsEditing(false);
+    }
+
+    const sse = new EventSource(`/api/submissions/${submission.id}/regrade-stream`);
+    
+    sse.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.done) {
+        sse.close();
+        setIsRegrading(false);
+        loadData(submission.id);
+      } else if (data.partialFeedback) {
+        setSubmission((prev: any) => ({
+          ...prev, 
+          ai_feedback: JSON.stringify(data.partialFeedback) 
+        }));
+      }
+    };
+
+    sse.onerror = (err) => {
+      console.error("SSE Error:", err);
+      sse.close();
+      setIsRegrading(false);
+    };
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+      </div>
+    );
+  }
+
+  if (!submission) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] text-slate-500">
+        <p>Không tìm thấy dữ liệu bài làm.</p>
+        <button onClick={onBack} className="mt-4 text-blue-600 font-medium">Quay lại</button>
+      </div>
+    );
+  }
+
+  let feedback;
+  try {
+    const raw = JSON.parse(submission.ai_feedback);
+    if (raw.status === "success" && raw.data) {
+       let suggestionsArray = [];
+       if (Array.isArray(raw.data.feedbacks.suggestions)) {
+         suggestionsArray = raw.data.feedbacks.suggestions;
+       } else if (typeof raw.data.feedbacks.suggestions === "string") {
+         suggestionsArray = [raw.data.feedbacks.suggestions];
+       }
+
+       feedback = {
+         overview: [raw.data.feedbacks.positive?.[0] || "Đã phân tích xong.", ...suggestionsArray],
+         strengths: raw.data.feedbacks.positive || [],
+         weaknesses: raw.data.feedbacks.improvements || [],
+         rubric_scores: raw.data.rubric_details || []
+       };
+    } else {
+       feedback = raw;
+    }
+  } catch (e) {
+    feedback = { overview: [], strengths: [], weaknesses: [], rubric_scores: [] };
+  }
+
+  const displayScore = submission.final_score !== null ? submission.final_score : submission.ai_score;
+  
+  // Calculate rating based on score
+  let ratingText = "Trung bình";
+  let stars = 3;
+  if (displayScore >= 8) {
+    ratingText = "Giỏi";
+    stars = 5;
+  } else if (displayScore >= 6.5) {
+    ratingText = "Khá";
+    stars = 4;
+  } else if (displayScore < 5) {
+    ratingText = "Yếu";
+    stars = 2;
+  }
+
+  const totalMaxScore = feedback?.rubric_scores?.reduce((acc: number, item: any) => acc + item.maxScore, 0) || 10;
+
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-6 h-full flex flex-col animate-in fade-in duration-500">
+    <div className="p-8 max-w-[1400px] mx-auto space-y-6 min-h-full flex flex-col animate-in fade-in duration-500">
       
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
+      {/* Header Area */}
+      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-4 border-b border-slate-200">
+        <div className="space-y-3 relative">
           <button 
             onClick={onBack}
-            className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 transition-colors"
+            className="absolute -left-12 top-0 p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors hidden xl:block"
+            title="Quay lại"
           >
-            <ArrowLeft className="w-5 h-5" />
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
           </button>
-          <div>
-             <h2 className="text-2xl font-bold tracking-tight text-slate-900">Chi tiết Bài chấm</h2>
-             <p className="text-sm text-slate-500">Được chấm bởi AI Mentor • Cách đây ít phút</p>
+          
+          <h2 className="text-2xl font-bold tracking-tight text-slate-900">Chi tiết bài chấm</h2>
+          
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-slate-600">
+            <div className="flex items-center gap-1.5">
+              <User className="w-4 h-4 text-slate-400" />
+              <span><span className="text-slate-500">Học sinh:</span> {submission.student_name}</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Clock className="w-4 h-4 text-slate-400" />
+              <span><span className="text-slate-500">Thời gian nộp:</span> {new Date(submission.submission_date).toLocaleString('vi-VN')}</span>
+            </div>
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="text-right">
-            <div className="text-sm font-medium text-slate-500">Tổng điểm</div>
-            <div className="text-3xl font-black text-indigo-600">{sampleResult.score}<span className="text-lg text-slate-400 font-medium">/10</span></div>
-          </div>
+
+        <div className="flex items-center gap-3 w-full md:w-auto">
+          <button 
+            onClick={onBack}
+            className="md:hidden flex items-center justify-center p-2 text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors border border-slate-200"
+          >
+            Quay lại
+          </button>
+
+          <button 
+            onClick={handleRegrade}
+            disabled={isRegrading}
+            className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-slate-700 font-medium py-2 px-4 rounded-lg border border-slate-300 shadow-sm transition-colors disabled:opacity-75 disabled:cursor-wait"
+          >
+            <RefreshCw className={cn("w-4 h-4", isRegrading && "animate-spin")} />
+            <span>Chấm lại</span>
+          </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 flex-1 min-h-0">
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_500px] gap-6 flex-1">
         
-        {/* Left Column: Essay & Rubric */}
-        <div className="flex flex-col gap-6 h-full">
-          {/* Essay Area */}
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex-1 overflow-y-auto">
-            <h3 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
-              <FileIcon /> Văn bản bài làm
-            </h3>
-            <div className="text-slate-700 leading-relaxed text-lg">
-              {renderTextWithHighlights()}
-            </div>
-            
-            {/* Active Highlight Info Toolkit (Mobile fallback/sticky context) */}
-            {activeHighlight !== null && (
-              <div className="mt-6 p-4 rounded-xl border border-indigo-100 bg-indigo-50 animate-in slide-in-from-top-2">
-                <div className="flex items-start gap-3">
-                  {sampleResult.highlights[activeHighlight].type === 'positive' ? 
-                    <CheckCircle2 className="w-5 h-5 text-green-600 mt-0.5 shrink-0" /> : 
-                    <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />}
-                  <p className="text-sm font-medium text-slate-800">
-                    {sampleResult.highlights[activeHighlight].comment}
-                  </p>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Rubric Area */}
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-             <h3 className="font-semibold text-slate-800 mb-4">Bảng điểm Rubric</h3>
-             <div className="space-y-3">
-               {sampleResult.rubric.map((item, idx) => (
-                 <div key={idx} className="group relative">
-                    <div className="flex items-center justify-between p-3 rounded-lg border border-slate-100 hover:border-indigo-100 hover:bg-slate-50 transition-colors">
-                      <span className="font-medium text-slate-700">{item.criteria}</span>
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-slate-900">{item.score}</span>
-                        <span className="text-slate-400 text-sm">/ {item.maxScore}</span>
-                      </div>
-                    </div>
-                    {/* Tooltip on hover */}
-                    <div className="absolute left-0 bottom-full mb-2 w-full invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-all duration-200 z-10">
-                      <div className="bg-slate-900 text-white text-sm p-3 rounded-lg shadow-xl">
-                        {item.description}
-                        {/* Little triangle arrow */}
-                        <div className="absolute left-6 -bottom-1 w-2 h-2 bg-slate-900 rotate-45"></div>
-                      </div>
-                    </div>
-                 </div>
-               ))}
+        {/* Left Column */}
+        <div className="flex flex-col gap-6">
+          
+          {/* Question Card */}
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200">
+             <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-2">
+               <FileText className="w-5 h-5 text-blue-500" />
+               <h3 className="font-bold text-slate-800 text-lg">Đề bài</h3>
+             </div>
+             <div className="p-6 text-slate-800 leading-relaxed font-sans text-[15px] font-medium">
+               {submission.topic_title}
              </div>
           </div>
-        </div>
 
-        {/* Right Column: AI Feedback Cards */}
-        <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200 overflow-y-auto h-full space-y-6">
-           <h3 className="font-semibold text-slate-800 pb-2 border-b border-slate-200">Phản hồi từ AI</h3>
-           
-           {/* Positive */}
-           <div className="bg-white rounded-xl border border-green-200 shadow-sm overflow-hidden">
-              <div className="bg-green-50 px-4 py-3 border-b border-green-100 flex items-center gap-2">
-                <CheckCircle2 className="w-5 h-5 text-green-600" />
-                <h4 className="font-bold text-green-900">Điểm sáng (Khen ngợi)</h4>
-              </div>
-              <ul className="p-4 space-y-2">
-                {sampleResult.feedback.praise.map((p, i) => (
-                  <li key={i} className="flex items-start gap-2 text-sm text-slate-700">
-                    <span className="text-green-500 mt-0.5">•</span>
-                    {p}
-                  </li>
-                ))}
-              </ul>
-           </div>
-
-           {/* Warnings */}
-           <div className="bg-white rounded-xl border border-amber-200 shadow-sm overflow-hidden">
-              <div className="bg-amber-50 px-4 py-3 border-b border-amber-100 flex items-center gap-2">
-                <AlertTriangle className="w-5 h-5 text-amber-600" />
-                <h4 className="font-bold text-amber-900">Điểm cần lưu ý (Cảnh báo)</h4>
-              </div>
-              <ul className="p-4 space-y-2">
-                {sampleResult.feedback.warnings.map((w, i) => (
-                  <li key={i} className="flex items-start gap-2 text-sm text-slate-700">
-                    <span className="text-amber-500 mt-0.5">•</span>
-                    {w}
-                  </li>
-                ))}
-              </ul>
-           </div>
-
-           {/* Guidance */}
-           <div className="bg-white rounded-xl border border-blue-200 shadow-sm overflow-hidden relative overflow-hidden">
-              {/* Highlight background gradient */}
-              <div className="absolute top-0 right-0 p-16 bg-blue-100 blur-3xl opacity-50 rounded-full mix-blend-multiply border-none pointer-events-none"></div>
-
-              <div className="bg-blue-600 px-4 py-3 flex items-center gap-2 text-white relative z-10">
-                <Lightbulb className="w-5 h-5 text-blue-100" />
-                <h4 className="font-bold">Gợi ý mở rộng (Hướng dẫn)</h4>
-              </div>
-              <div className="p-4 relative z-10">
-                <p className="text-sm text-slate-700 leading-relaxed mb-4">
-                  {sampleResult.feedback.guidance.split("Thử viết thêm 1 đoạn: ")[0]}
-                </p>
-                
-                <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 relative">
-                  <div className="absolute -top-3 left-4 bg-white px-2 text-xs font-bold text-blue-600 uppercase tracking-wider">Đoạn văn mẫu AI gợi ý</div>
-                  <p className="text-sm text-slate-600 italic leading-relaxed mt-1">
-                    "{sampleResult.feedback.guidance.split("Thử viết thêm 1 đoạn: '")[1]?.replace(/'$/, '')}"
-                  </p>
-                </div>
-              </div>
-           </div>
+          {/* Essay Card */}
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col flex-1 min-h-[300px]">
+             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+               <h3 className="font-bold text-slate-800 text-lg">Bài làm của học sinh</h3>
+               {isEditing ? (
+                 <div className="flex items-center gap-2">
+                   <button 
+                     onClick={() => {
+                        setIsEditing(false);
+                        setEditedContent(submission.content);
+                     }}
+                     className="px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                   >
+                     Hủy
+                   </button>
+                   <button 
+                     onClick={handleRegrade}
+                     disabled={isRegrading}
+                     className="px-3 py-1.5 text-sm bg-blue-600 text-white font-medium hover:bg-blue-700 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-75 disabled:cursor-wait"
+                   >
+                     <RefreshCw className={cn("w-4 h-4", isRegrading && "animate-spin")} /> Lưu & Chấm lại
+                   </button>
+                 </div>
+               ) : (
+                 <button 
+                   onClick={() => setIsEditing(true)}
+                   className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100 rounded-lg transition-colors border border-slate-200 shadow-sm"
+                 >
+                   <Edit3 className="w-4 h-4" /> Sửa bài
+                 </button>
+               )}
+             </div>
+             <div className="p-6 flex-1 text-slate-800 leading-relaxed whitespace-pre-wrap font-sans text-[15px]">
+               {isEditing ? (
+                 <textarea
+                   value={editedContent}
+                   onChange={(e) => setEditedContent(e.target.value)}
+                   className="w-full h-full min-h-[250px] p-4 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-y"
+                 />
+               ) : (
+                 submission.content
+               )}
+             </div>
+          </div>
 
         </div>
 
+        {/* Right Column (Feedback) */}
+        <div className="flex flex-col gap-4">
+          
+          {/* Score Card */}
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col gap-6 shrink-0">
+            <h3 className="font-bold text-slate-800 text-lg">Kết quả chấm điểm</h3>
+            
+            <div className="flex items-center gap-8">
+               {/* Circle Score */}
+               <div className="relative w-28 h-28 shrink-0">
+                  <svg viewBox="0 0 36 36" className="w-full h-full transform -rotate-90">
+                    <path
+                      d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                      fill="none"
+                      stroke="#EFF6FF"
+                      strokeWidth="3.5"
+                    />
+                    <path
+                      d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                      fill="none"
+                      stroke="#2563EB"
+                      strokeWidth="3.5"
+                      strokeDasharray={`${(displayScore / 10) * 100}, 100`}
+                      className="transition-all duration-1000 ease-out"
+                    />
+                  </svg>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center mt-1">
+                     <span className="text-3xl font-black text-slate-900 leading-none">{displayScore ? displayScore.toFixed(1) : '-'}</span>
+                     <span className="text-sm text-slate-500 font-medium">/10</span>
+                  </div>
+               </div>
+
+               <div className="flex-1 space-y-3">
+                 <div className="flex items-center gap-2">
+                   <span className="font-semibold text-slate-800">Xếp loại:</span>
+                   <span className="font-bold text-slate-900">{ratingText}</span>
+                 </div>
+                 
+                 <div className="flex items-center gap-1">
+                   {[1, 2, 3, 4, 5].map((star) => (
+                     <Star 
+                       key={star} 
+                       className={cn(
+                         "w-6 h-6", 
+                         star <= stars 
+                           ? "fill-amber-400 text-amber-400" 
+                           : "fill-slate-100 text-slate-200"
+                       )} 
+                     />
+                   ))}
+                 </div>
+
+                 <p className="text-sm text-slate-600 mt-2 leading-relaxed">
+                   <span className="font-semibold text-slate-800">Điểm mạnh nổi bật: </span>
+                   {feedback?.overview?.[0] || feedback?.strengths?.[0] || "Đang phân tích..."}
+                 </p>
+               </div>
+            </div>
+          </div>
+
+          {/* Positive Feedback */}
+          <div className="bg-white rounded-xl shadow-sm border border-emerald-200 overflow-hidden shrink-0">
+            <div className="px-5 py-4 border-b border-emerald-100 flex items-center gap-2 bg-emerald-50/30">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+              <h4 className="font-bold text-emerald-800">Nhận xét tích cực</h4>
+            </div>
+            <div className="p-5 bg-white">
+              <ul className="space-y-3">
+                {feedback?.strengths?.map((text: string, i: number) => (
+                  <li key={i} className="flex gap-3 text-sm text-slate-700 leading-relaxed">
+                    <span className="text-emerald-500 font-bold mt-0.5">•</span>
+                    <span>{text}</span>
+                  </li>
+                ))}
+                {(!feedback?.strengths || feedback.strengths.length === 0) && (
+                   <li className="text-slate-500 text-sm italic">Đang chấm điểm...</li>
+                )}
+              </ul>
+            </div>
+          </div>
+
+          {/* Weaknesses Feedback */}
+          <div className="bg-white rounded-xl shadow-sm border border-amber-200 overflow-hidden shrink-0">
+            <div className="px-5 py-4 border-b border-amber-100 flex items-center gap-2 bg-amber-50/50">
+              <AlertTriangle className="w-5 h-5 text-amber-600" />
+              <h4 className="font-bold text-amber-800">Góp ý để cải thiện</h4>
+            </div>
+            <div className="p-5 bg-amber-50/20">
+              <ul className="space-y-3">
+                {feedback?.weaknesses?.map((text: string, i: number) => (
+                  <li key={i} className="flex gap-3 text-sm text-slate-700 leading-relaxed">
+                    <span className="text-amber-500 font-bold mt-0.5">•</span>
+                    <span>{text}</span>
+                  </li>
+                ))}
+                {(!feedback?.weaknesses || feedback.weaknesses.length === 0) && (
+                   <li className="text-slate-500 text-sm italic">Không có...</li>
+                )}
+              </ul>
+            </div>
+          </div>
+
+          {/* Guidance Feedback */}
+          <div className="bg-white rounded-xl shadow-sm border border-blue-200 overflow-hidden shrink-0">
+            <div className="px-5 py-4 border-b border-blue-100 flex items-center gap-2 bg-blue-50/50">
+              <Lightbulb className="w-5 h-5 text-blue-600" />
+              <h4 className="font-bold text-blue-800">Gợi ý sửa bài</h4>
+            </div>
+            <div className="p-5 bg-blue-50/20">
+              <ul className="space-y-3">
+                {/* Fallback to overview or default string if guidance not explicitly provided */}
+                {feedback?.overview?.slice(1).map((text: string, i: number) => (
+                  <li key={i} className="flex gap-3 text-sm text-slate-700 leading-relaxed">
+                    <span className="text-blue-500 font-bold mt-0.5">•</span>
+                    <span>{text}</span>
+                  </li>
+                ))}
+                {(!feedback?.overview || feedback.overview.length <= 1) && (
+                   <li className="flex gap-3 text-sm text-slate-700 leading-relaxed">
+                     <span className="text-blue-500 font-bold mt-0.5">•</span>
+                     <span>Bổ sung sâu hơn về số liệu thực tế.</span>
+                   </li>
+                )}
+              </ul>
+            </div>
+          </div>
+
+          {/* Rubric Card */}
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 shrink-0">
+             <div className="px-6 py-4 border-b border-slate-100">
+               <h3 className="font-bold text-slate-800 text-lg">Rubric chấm điểm</h3>
+             </div>
+             <div className="p-4 overflow-x-auto">
+                <table className="w-full text-sm text-left">
+                  <thead className="text-slate-600 font-semibold border-b border-slate-200">
+                    <tr>
+                      <th className="pb-3 px-2 font-semibold">Tiêu chí</th>
+                      <th className="pb-3 px-2 text-center font-semibold text-slate-500 whitespace-nowrap">Trọng số</th>
+                      <th className="pb-3 px-2 text-center font-semibold text-slate-500 whitespace-nowrap">Điểm tối đa</th>
+                      <th className="pb-3 px-2 text-center font-semibold text-blue-700 whitespace-nowrap">Điểm đạt được</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {feedback?.rubric_scores?.map((item: any, idx: number) => {
+                      let weight = item.weight !== undefined ? item.weight : Math.round((item.maxScore / (totalMaxScore || 10)) * 100);
+                      if (weight <= 1 && weight > 0) weight = Math.round(weight * 100);
+                      return (
+                        <tr key={idx} className="hover:bg-slate-50">
+                          <td className="py-4 px-2 text-slate-700 font-medium">{idx + 1}. {item.criteria}</td>
+                          <td className="py-4 px-2 text-center text-slate-600">{weight}%</td>
+                          <td className="py-4 px-2 text-center text-slate-600">10.0</td>
+                          <td className="py-4 px-2 text-center font-medium text-slate-900">{item.score.toFixed(1)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot className="border-t-2 border-slate-200 bg-slate-50">
+                    <tr>
+                      <td className="py-4 px-2 font-bold text-slate-900 text-base">Tổng</td>
+                      <td className="py-4 px-2 text-center font-bold text-slate-900">100%</td>
+                      <td className="py-4 px-2 text-center font-bold text-slate-900">10.0</td>
+                      <td className="py-4 px-2 text-center font-bold text-blue-700 text-base">{displayScore ? displayScore.toFixed(1) : '-'}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+             </div>
+          </div>
+
+        </div>
       </div>
     </div>
   );
 }
 
-// Simple internal icon for UI cleanline
-function FileIcon() {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-indigo-500"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/><line x1="10" x2="8" y1="9" y2="9"/></svg>
-  )
-}
